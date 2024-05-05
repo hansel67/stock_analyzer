@@ -8,15 +8,23 @@ import numpy as np
 import scipy.stats as stats
 from arch import arch_model
 import sys
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
 def fetch_stock_data(ticker):
     end_date = pd.to_datetime('now')
     start_date = end_date - pd.DateOffset(years=10)
     data = yf.download(ticker, start=start_date, end=end_date)
+
+    # Drop missing values
+
+    data.dropna(inplace=True)
     return data
 
 def plot_stock_data(data, ticker, frame):
-    
+
     # Stock Closing Prices Plot and Distribution Analysis Plot
     fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(10, 7))
 
@@ -32,17 +40,12 @@ def plot_stock_data(data, ticker, frame):
     std_log_return = data['Log_Returns'].std()
     data.dropna(inplace = True)
 
-    ax2.plot(data['Log_Returns'], label = 'Log Returns', color='blue')
-    ax2.set_title('Log Returns')
-    ax2.set_xlabel('Date')
-    ax3.set_ylabel('Log Returns')
-
     #GARCH Model
     garch_model = arch_model(data['Log_Returns'])
     garch_fit = garch_model.fit()
-    conditional_volatility = garch_fit.conditional_volatility
+    data['Volatility'] = garch_fit.conditional_volatility
 
-    ax3.plot(conditional_volatility, label='Conditional Volatility', color='blue')
+    ax3.plot(data['Volatility'], label='Conditional Volatility', color='blue')
     ax3.set_title('GARCH Model - Conditional Volatility')
     ax3.set_xlabel('Date')
     ax3.set_ylabel('Volatility')
@@ -59,6 +62,37 @@ def plot_stock_data(data, ticker, frame):
     ax4.set_title(title)
     ax4.set_xlabel('Log Returns')
     ax4.set_ylabel('Density')
+
+    # Feature Engineering
+    X = data[['Close', 'Volatility']].values[:-1]
+    y = data['Close'].values[1:]
+
+    # Data Normalization
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # Splitting data for training and testing
+    train_ratio = 0.8
+    split_index = int(len(X_scaled) * train_ratio)
+    X_train, X_test = X_scaled[:split_index], X_scaled[split_index:]
+    y_train, y_test = y[:split_index], y[split_index:]
+
+    # Model Building - Using Random Forest for demonstration
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Model Evaluation
+    predictions = model.predict(X_test)
+    mse = mean_squared_error(y_test, predictions)
+    r2 = r2_score(y_test, predictions)
+
+    # Actual vs Predicted Prices
+    ax2.plot(y_test, label='Actual Price', color='blue')
+    ax2.plot(predictions, label='Predicted Price', color='red')
+    ml_title = f'Random Forest: MSE = {mse:.6f},  r² = {r2:.6f}'
+    ax2.set_title(ml_title)
+    ax2.set_xlabel('Time')
+    ax2.set_ylabel('Price')
 
     # Spacing graphs
     fig.tight_layout(pad = 2)
